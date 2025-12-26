@@ -34,7 +34,7 @@ export function LoginForm() {
   const form = useForm<z.infer<typeof formSchema>>({
     resolver: zodResolver(formSchema),
     defaultValues: {
-      email: 'admin@monopoly.com',
+      email: 'robert.stewart.m@outlook.com',
       password: 'password',
     },
   });
@@ -43,11 +43,10 @@ export function LoginForm() {
     setLoading(true);
     setError(null);
     try {
-      // Using mock sign-in from useAuth
-      await signIn();
+      await signIn(values.email, values.password);
       router.push('/dashboard');
-    } catch (err) {
-      setError('Failed to sign in. Please check your credentials.');
+    } catch (err: any) {
+      setError(err.message || 'Failed to sign in. Please check your credentials.');
       setLoading(false);
     }
   }

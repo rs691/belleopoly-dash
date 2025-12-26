@@ -9,7 +9,7 @@ import React, {
 } from 'react';
 import type { User as FirebaseUser } from 'firebase/auth';
 import { auth } from '@/lib/firebase/config';
-import { onAuthStateChanged, signOut as firebaseSignOut } from 'firebase/auth';
+import { onAuthStateChanged, signOut as firebaseSignOut, signInWithEmailAndPassword } from 'firebase/auth';
 
 // Define a user type for the app
 export type User = {
@@ -23,20 +23,12 @@ export type User = {
 interface AuthContextType {
   user: User | null;
   loading: boolean;
-  signIn: () => Promise<void>;
+  signIn: (email: string, pass: string) => Promise<void>;
   signOut: () => Promise<void>;
 }
 
 // Create the context
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
-
-// Mock user for development without full Firebase setup
-const mockUser: User = {
-  uid: 'mock-user-123',
-  email: 'admin@monopoly.com',
-  displayName: 'Admin User',
-  photoURL: 'https://picsum.photos/seed/avatar/100/100',
-};
 
 // AuthProvider component
 export function AuthProvider({ children }: { children: React.ReactNode }) {
@@ -44,56 +36,37 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    // In a real app, you would use onAuthStateChanged
-    // For this mock, we'll just set a user after a delay to simulate loading
-    const timer = setTimeout(() => {
-      // To test the real Firebase flow, you can uncomment the below
-      /*
-      const unsubscribe = onAuthStateChanged(auth, (firebaseUser: FirebaseUser | null) => {
-        if (firebaseUser) {
-          const formattedUser: User = {
-            uid: firebaseUser.uid,
-            email: firebaseUser.email,
-            displayName: firebaseUser.displayName,
-            photoURL: firebaseUser.photoURL,
-          };
-          setUser(formattedUser);
-        } else {
-          setUser(null);
-        }
-        setLoading(false);
-      });
-      return () => unsubscribe();
-      */
-
-      // For mock purposes:
-      const storedUser = sessionStorage.getItem('mock-user');
-      if (storedUser) {
-        setUser(JSON.parse(storedUser));
+    const unsubscribe = onAuthStateChanged(auth, (firebaseUser: FirebaseUser | null) => {
+      if (firebaseUser) {
+        const formattedUser: User = {
+          uid: firebaseUser.uid,
+          email: firebaseUser.email,
+          displayName: firebaseUser.displayName,
+          photoURL: firebaseUser.photoURL,
+        };
+        setUser(formattedUser);
+      } else {
+        setUser(null);
       }
       setLoading(false);
-    }, 1000);
-
-    return () => clearTimeout(timer);
+    });
+    return () => unsubscribe();
   }, []);
 
-  const signIn = async () => {
-    // In a real app, this would be signInWithEmailAndPassword, etc.
+  const signIn = async (email: string, pass: string) => {
     setLoading(true);
-    // Mock sign-in
-    await new Promise((resolve) => setTimeout(resolve, 500));
-    setUser(mockUser);
-    sessionStorage.setItem('mock-user', JSON.stringify(mockUser));
-    setLoading(false);
+    try {
+      await signInWithEmailAndPassword(auth, email, pass);
+    } catch(e) {
+      setLoading(false);
+      throw e;
+    }
   };
 
   const signOut = async () => {
     setLoading(true);
-    // Real sign out: await firebaseSignOut(auth);
-    // Mock sign-out
-    await new Promise((resolve) => setTimeout(resolve, 500));
+    await firebaseSignOut(auth);
     setUser(null);
-    sessionStorage.removeItem('mock-user');
     setLoading(false);
   };
 
