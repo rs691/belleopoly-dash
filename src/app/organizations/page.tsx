@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import {
   Table,
   TableBody,
@@ -12,7 +12,6 @@ import {
 import {
   Card,
   CardContent,
-  CardDescription,
   CardHeader,
   CardTitle,
 } from '@/components/ui/card';
@@ -53,11 +52,23 @@ import {
 } from '@/components/ui/form';
 import { Input } from '@/components/ui/input';
 
-import { MoreHorizontal, PlusCircle } from 'lucide-react';
+import { MoreHorizontal, PlusCircle, Loader2 } from 'lucide-react';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import * as z from 'zod';
 import { format } from 'date-fns';
+import {
+  collection,
+  getDocs,
+  addDoc,
+  updateDoc,
+  deleteDoc,
+  doc,
+  Timestamp,
+  query,
+  orderBy,
+} from 'firebase/firestore';
+import { db } from '@/lib/firebase/config';
 
 type Organization = {
   id: string;
@@ -66,34 +77,14 @@ type Organization = {
   createdAt: Date;
 };
 
-const initialOrgs: Organization[] = [
-  {
-    id: 'org1',
-    name: 'Hasbro Gaming',
-    contactEmail: 'contact@hasbro.com',
-    createdAt: new Date('2023-01-15'),
-  },
-  {
-    id: 'org2',
-    name: 'Parker Brothers',
-    contactEmail: 'info@parkerbros.com',
-    createdAt: new Date('2023-03-20'),
-  },
-  {
-    id: 'org3',
-    name: 'Winning Moves',
-    contactEmail: 'support@winningmoves.co.uk',
-    createdAt: new Date('2023-05-01'),
-  },
-];
-
 const orgSchema = z.object({
   name: z.string().min(1, 'Organization name is required'),
   contactEmail: z.string().email('Invalid email address'),
 });
 
 export default function OrganizationsPage() {
-  const [orgs, setOrgs] = useState<Organization[]>(initialOrgs);
+  const [orgs, setOrgs] = useState<Organization[]>([]);
+  const [loading, setLoading] = useState(true);
   const [isFormOpen, setIsFormOpen] = useState(false);
   const [isDeleteAlertOpen, setIsDeleteAlertOpen] = useState(false);
   const [selectedOrg, setSelectedOrg] = useState<Organization | null>(null);
@@ -106,6 +97,28 @@ export default function OrganizationsPage() {
     },
   });
 
+  const fetchOrgs = async () => {
+    setLoading(true);
+    const orgsCollection = collection(db, 'organizations');
+    const q = query(orgsCollection, orderBy('created_at', 'desc'));
+    const orgsSnapshot = await getDocs(q);
+    const orgsList = orgsSnapshot.docs.map((doc) => {
+      const data = doc.data();
+      return {
+        id: doc.id,
+        name: data.name,
+        contactEmail: data.contactEmail || '',
+        createdAt: (data.created_at as Timestamp).toDate(),
+      };
+    });
+    setOrgs(orgsList);
+    setLoading(false);
+  };
+
+  useEffect(() => {
+    fetchOrgs();
+  }, []);
+
   const handleAdd = () => {
     setSelectedOrg(null);
     form.reset({ name: '', contactEmail: '' });
@@ -114,7 +127,7 @@ export default function OrganizationsPage() {
 
   const handleEdit = (org: Organization) => {
     setSelectedOrg(org);
-    form.reset(org);
+    form.reset({ name: org.name, contactEmail: org.contactEmail });
     setIsFormOpen(true);
   };
 
@@ -123,31 +136,30 @@ export default function OrganizationsPage() {
     setIsDeleteAlertOpen(true);
   };
 
-  const confirmDelete = () => {
+  const confirmDelete = async () => {
     if (selectedOrg) {
-      setOrgs(orgs.filter((o) => o.id !== selectedOrg.id));
+      await deleteDoc(doc(db, 'organizations', selectedOrg.id));
+      await fetchOrgs();
     }
     setIsDeleteAlertOpen(false);
     setSelectedOrg(null);
   };
 
-  const onSubmit = (values: z.infer<typeof orgSchema>) => {
+  const onSubmit = async (values: z.infer<typeof orgSchema>) => {
     if (selectedOrg) {
       // Update
-      setOrgs(
-        orgs.map((o) =>
-          o.id === selectedOrg.id ? { ...o, ...values } : o
-        )
-      );
+      const orgDoc = doc(db, 'organizations', selectedOrg.id);
+      await updateDoc(orgDoc, values);
     } else {
       // Add
-      const newOrg: Organization = {
-        id: `org${orgs.length + 1}`,
+      await addDoc(collection(db, 'organizations'), {
         ...values,
-        createdAt: new Date(),
-      };
-      setOrgs([newOrg, ...orgs]);
+        created_at: Timestamp.now(),
+        admin_ids: [],
+        settings: {},
+      });
     }
+    await fetchOrgs();
     setIsFormOpen(false);
     setSelectedOrg(null);
   };
@@ -169,50 +181,56 @@ export default function OrganizationsPage() {
 
       <Card>
         <CardContent className="pt-6">
-          <Table>
-            <TableHeader>
-              <TableRow>
-                <TableHead>Name</TableHead>
-                <TableHead>Contact Email</TableHead>
-                <TableHead>Created At</TableHead>
-                <TableHead>
-                  <span className="sr-only">Actions</span>
-                </TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {orgs.map((org) => (
-                <TableRow key={org.id}>
-                  <TableCell className="font-medium">{org.name}</TableCell>
-                  <TableCell>{org.contactEmail}</TableCell>
-                  <TableCell>
-                    {format(org.createdAt, 'PPP')}
-                  </TableCell>
-                  <TableCell>
-                    <DropdownMenu>
-                      <DropdownMenuTrigger asChild>
-                        <Button aria-haspopup="true" size="icon" variant="ghost">
-                          <MoreHorizontal className="h-4 w-4" />
-                          <span className="sr-only">Toggle menu</span>
-                        </Button>
-                      </DropdownMenuTrigger>
-                      <DropdownMenuContent align="end">
-                        <DropdownMenuItem onSelect={() => handleEdit(org)}>
-                          Edit
-                        </DropdownMenuItem>
-                        <DropdownMenuItem
-                          onSelect={() => handleDelete(org)}
-                          className="text-destructive"
-                        >
-                          Delete
-                        </DropdownMenuItem>
-                      </DropdownMenuContent>
-                    </DropdownMenu>
-                  </TableCell>
+          {loading ? (
+            <div className="flex justify-center items-center h-64">
+              <Loader2 className="h-8 w-8 animate-spin" />
+            </div>
+          ) : (
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>Name</TableHead>
+                  <TableHead>Contact Email</TableHead>
+                  <TableHead>Created At</TableHead>
+                  <TableHead>
+                    <span className="sr-only">Actions</span>
+                  </TableHead>
                 </TableRow>
-              ))}
-            </TableBody>
-          </Table>
+              </TableHeader>
+              <TableBody>
+                {orgs.map((org) => (
+                  <TableRow key={org.id}>
+                    <TableCell className="font-medium">{org.name}</TableCell>
+                    <TableCell>{org.contactEmail}</TableCell>
+                    <TableCell>
+                      {format(org.createdAt, 'PPP')}
+                    </TableCell>
+                    <TableCell>
+                      <DropdownMenu>
+                        <DropdownMenuTrigger asChild>
+                          <Button aria-haspopup="true" size="icon" variant="ghost">
+                            <MoreHorizontal className="h-4 w-4" />
+                            <span className="sr-only">Toggle menu</span>
+                          </Button>
+                        </DropdownMenuTrigger>
+                        <DropdownMenuContent align="end">
+                          <DropdownMenuItem onSelect={() => handleEdit(org)}>
+                            Edit
+                          </DropdownMenuItem>
+                          <DropdownMenuItem
+                            onSelect={() => handleDelete(org)}
+                            className="text-destructive"
+                          >
+                            Delete
+                          </DropdownMenuItem>
+                        </DropdownMenuContent>
+                      </DropdownMenu>
+                    </TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          )}
         </CardContent>
       </Card>
 
@@ -237,7 +255,7 @@ export default function OrganizationsPage() {
                   <FormItem>
                     <FormLabel>Organization Name</FormLabel>
                     <FormControl>
-                      <Input placeholder="e.g., Hasbro Gaming" {...field} />
+                      <Input placeholder="e.g., Bellevue Community" {...field} />
                     </FormControl>
                     <FormMessage />
                   </FormItem>
@@ -252,7 +270,7 @@ export default function OrganizationsPage() {
                     <FormControl>
                       <Input
                         type="email"
-                        placeholder="e.g., contact@hasbro.com"
+                        placeholder="e.g., contact@example.com"
                         {...field}
                       />
                     </FormControl>
@@ -266,7 +284,10 @@ export default function OrganizationsPage() {
                     Cancel
                   </Button>
                 </DialogClose>
-                <Button type="submit">Save</Button>
+                <Button type="submit" disabled={form.formState.isSubmitting}>
+                  {form.formState.isSubmitting && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+                  Save
+                </Button>
               </DialogFooter>
             </form>
           </Form>

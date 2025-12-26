@@ -28,79 +28,121 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 import { Input } from '@/components/ui/input';
-import { Slider } from '@/components/ui/slider';
 import { Textarea } from '@/components/ui/textarea';
 import { useToast } from '@/hooks/use-toast';
-import { Save } from 'lucide-react';
-import { useState } from 'react';
+import { Save, Loader2 } from 'lucide-react';
+import { useState, useEffect } from 'react';
+import { collection, getDocs, doc, getDoc, updateDoc, setDoc } from 'firebase/firestore';
+import { db } from '@/lib/firebase/config';
 
-const monopolyTiles = [
-  'Go',
-  'Mediterranean Avenue',
-  'Community Chest (1)',
-  'Baltic Avenue',
-  'Income Tax',
-  'Reading Railroad',
-  'Oriental Avenue',
-  'Chance (1)',
-  'Vermont Avenue',
-  'Connecticut Avenue',
-  'Jail / Just Visiting',
-  'St. Charles Place',
-  'Electric Company',
-  'States Avenue',
-  'Virginia Avenue',
-  'Pennsylvania Railroad',
-  'St. James Place',
-  'Community Chest (2)',
-  'Tennessee Avenue',
-  'New York Avenue',
-  'Free Parking',
-  'Kentucky Avenue',
-  'Chance (2)',
-  'Indiana Avenue',
-  'Illinois Avenue',
-  'B. & O. Railroad',
-  'Atlantic Avenue',
-  'Ventnor Avenue',
-  'Water Works',
-  'Marvin Gardens',
-  'Go To Jail',
-  'Pacific Avenue',
-  'North Carolina Avenue',
-  'Community Chest (3)',
-  'Pennsylvania Avenue',
-  'Short Line',
-  'Chance (3)',
-  'Park Place',
-  'Luxury Tax',
-  'Boardwalk',
-];
+type Business = {
+  id: string;
+  name: string;
+  details: {
+    street: string;
+    city: string;
+    state: 'NE';
+    zip: string;
+    hours: Record<string, string>;
+    heroImageUrl: string;
+    menuUrl: string;
+  };
+  points_per_visit: number;
+  total_scans: number;
+  qr_code_secret: string;
+  org_id: string;
+};
 
 const tileFormSchema = z.object({
-  tileName: z.string().min(1, 'Please select a tile.'),
-  owner: z.string().optional(),
-  rentLevel: z.number().min(0).max(5).default(0),
-  specialNotes: z.string().max(160).optional(),
+  business_id: z.string().min(1, 'Please select a business.'),
+  name: z.string().min(1, 'Business name is required.'),
+  street: z.string().min(1, 'Street is required.'),
+  city: z.string().min(1, 'City is required.'),
+  points_per_visit: z.coerce.number().min(0, 'Points must be non-negative.'),
+  qr_code_secret: z.string().min(1, 'QR code secret is required.'),
+  notes: z.string().optional(),
 });
 
 export default function TilesPage() {
   const { toast } = useToast();
-  const [rentLevel, setRentLevel] = useState([0]);
+  const [businesses, setBusinesses] = useState<Business[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [selectedBusiness, setSelectedBusiness] = useState<Business | null>(null);
 
   const form = useForm<z.infer<typeof tileFormSchema>>({
     resolver: zodResolver(tileFormSchema),
     defaultValues: {
-      rentLevel: 0,
+      business_id: '',
+      name: '',
+      street: '',
+      city: '',
+      points_per_visit: 0,
+      qr_code_secret: '',
+      notes: '',
     },
   });
 
-  function onSubmit(data: z.infer<typeof tileFormSchema>) {
-    console.log('Syncing data to Flutter app:', data);
+  const fetchBusinesses = async () => {
+    setLoading(true);
+    const businessesSnapshot = await getDocs(collection(db, 'businesses'));
+    const businessesList = businessesSnapshot.docs.map((d) => ({ id: d.id, ...d.data() })) as Business[];
+    setBusinesses(businessesList);
+    setLoading(false);
+  };
+
+  useEffect(() => {
+    fetchBusinesses();
+  }, []);
+
+  const handleTileChange = async (businessId: string) => {
+    if (!businessId) {
+      form.reset();
+      setSelectedBusiness(null);
+      return;
+    }
+    const business = businesses.find(b => b.id === businessId);
+    if(business) {
+      setSelectedBusiness(business);
+      form.reset({
+        business_id: business.id,
+        name: business.name,
+        street: business.details.street,
+        city: business.details.city,
+        points_per_visit: business.points_per_visit,
+        qr_code_secret: business.qr_code_secret,
+        notes: '', // Notes are not stored in the DB in this schema
+      });
+    }
+  };
+
+  async function onSubmit(data: z.infer<typeof tileFormSchema>) {
+    if (!selectedBusiness) {
+      toast({
+        variant: 'destructive',
+        title: 'Error',
+        description: 'No business selected.',
+      });
+      return;
+    }
+
+    const businessDocRef = doc(db, 'businesses', data.business_id);
+    const updatedData = {
+      name: data.name,
+      'details.street': data.street,
+      'details.city': data.city,
+      points_per_visit: data.points_per_visit,
+      qr_code_secret: data.qr_code_secret,
+    };
+    
+    await updateDoc(businessDocRef, updatedData);
+
     toast({
       title: 'Sync Successful',
-      description: `Data for ${data.tileName} has been updated.`,
+      description: `Data for ${data.name} has been updated.`,
     });
+    
+    // Refetch to ensure local state is up-to-date
+    fetchBusinesses();
   }
 
   return (
@@ -115,34 +157,42 @@ export default function TilesPage() {
       </header>
       <Card>
         <CardHeader>
-          <CardTitle>Edit Tile Properties</CardTitle>
+          <CardTitle>Edit Business Properties</CardTitle>
           <CardDescription>
-            Select a tile and update its properties. Changes will be reflected
-            in the app.
+            Select a business to edit its properties. Changes will be
+            synced to Firestore.
           </CardDescription>
         </CardHeader>
         <CardContent>
+          {loading ? (
+             <div className="flex justify-center items-center h-64">
+              <Loader2 className="h-8 w-8 animate-spin" />
+            </div>
+          ) : (
           <Form {...form}>
             <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-8">
               <FormField
                 control={form.control}
-                name="tileName"
+                name="business_id"
                 render={({ field }) => (
                   <FormItem>
-                    <FormLabel>Tile</FormLabel>
+                    <FormLabel>Business</FormLabel>
                     <Select
-                      onValueChange={field.onChange}
+                      onValueChange={(value) => {
+                        field.onChange(value);
+                        handleTileChange(value);
+                      }}
                       defaultValue={field.value}
                     >
                       <FormControl>
                         <SelectTrigger>
-                          <SelectValue placeholder="Select a tile to edit" />
+                          <SelectValue placeholder="Select a business to edit" />
                         </SelectTrigger>
                       </FormControl>
                       <SelectContent>
-                        {monopolyTiles.map((tile) => (
-                          <SelectItem key={tile} value={tile}>
-                            {tile}
+                        {businesses.map((business) => (
+                          <SelectItem key={business.id} value={business.id}>
+                            {business.name}
                           </SelectItem>
                         ))}
                       </SelectContent>
@@ -151,71 +201,111 @@ export default function TilesPage() {
                   </FormItem>
                 )}
               />
-              <FormField
-                control={form.control}
-                name="owner"
-                render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>Owner</FormLabel>
-                    <FormControl>
-                      <Input placeholder="e.g., Player 1" {...field} />
-                    </FormControl>
-                    <FormDescription>
-                      Assign an owner to this property. Leave blank if unowned.
-                    </FormDescription>
-                    <FormMessage />
-                  </FormItem>
-                )}
-              />
-              <FormField
-                control={form.control}
-                name="rentLevel"
-                render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>
-                      Rent Level / Houses (Current: {rentLevel[0]})
-                    </FormLabel>
-                    <FormControl>
-                      <Slider
-                        min={0}
-                        max={5}
-                        step={1}
-                        defaultValue={[field.value]}
-                        onValueChange={(value) => {
-                          field.onChange(value[0]);
-                          setRentLevel(value);
-                        }}
-                      />
-                    </FormControl>
-                    <FormDescription>
-                      0 for base rent, 1-4 for houses, 5 for a hotel.
-                    </FormDescription>
-                  </FormItem>
-                )}
-              />
-              <FormField
-                control={form.control}
-                name="specialNotes"
-                render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>Special Notes</FormLabel>
-                    <FormControl>
-                      <Textarea
-                        placeholder="Any special notes for this tile..."
-                        className="resize-none"
-                        {...field}
-                      />
-                    </FormControl>
-                    <FormMessage />
-                  </FormItem>
-                )}
-              />
-              <Button type="submit">
-                <Save className="mr-2 h-4 w-4" />
-                Save Changes
-              </Button>
+
+              { selectedBusiness && (
+                <>
+                  <FormField
+                    control={form.control}
+                    name="name"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>Business Name</FormLabel>
+                        <FormControl>
+                          <Input placeholder="e.g., Stella's Bar & Grill" {...field} />
+                        </FormControl>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
+                    <FormField
+                      control={form.control}
+                      name="street"
+                      render={({ field }) => (
+                        <FormItem>
+                          <FormLabel>Street Address</FormLabel>
+                          <FormControl>
+                            <Input placeholder="e.g., 106 W Main St" {...field} />
+                          </FormControl>
+                          <FormMessage />
+                        </FormItem>
+                      )}
+                    />
+                     <FormField
+                      control={form.control}
+                      name="city"
+                      render={({ field }) => (
+                        <FormItem>
+                          <FormLabel>City</FormLabel>
+                          <FormControl>
+                            <Input placeholder="e.g., Bellevue" {...field} />
+                          </FormControl>
+                          <FormMessage />
+                        </FormItem>
+                      )}
+                    />
+                  </div>
+                   <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
+                     <FormField
+                      control={form.control}
+                      name="points_per_visit"
+                      render={({ field }) => (
+                        <FormItem>
+                          <FormLabel>Points Per Visit</FormLabel>
+                          <FormControl>
+                            <Input type="number" {...field} />
+                          </FormControl>
+                           <FormMessage />
+                        </FormItem>
+                      )}
+                    />
+                    <FormField
+                      control={form.control}
+                      name="qr_code_secret"
+                      render={({ field }) => (
+                        <FormItem>
+                          <FormLabel>QR Code Secret</FormLabel>
+                          <FormControl>
+                            <Input {...field} />
+                          </FormControl>
+                          <FormMessage />
+                        </FormItem>
+                      )}
+                    />
+                  </div>
+                   <FormField
+                    control={form.control}
+                    name="notes"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>Internal Notes</FormLabel>
+                        <FormControl>
+                          <Textarea
+                            placeholder="Internal notes for this business (not saved to DB)..."
+                            className="resize-none"
+                            {...field}
+                          />
+                        </FormControl>
+                        <FormDescription>
+                          These notes are for admin reference only and will not be saved.
+                        </FormDescription>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+                  <Button type="submit" disabled={form.formState.isSubmitting}>
+                    {form.formState.isSubmitting ? (
+                      <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                    ) : (
+                      <Save className="mr-2 h-4 w-4" />
+                    )}
+                    Save Changes
+                  </Button>
+                </>
+              )}
             </form>
           </Form>
+          )}
         </CardContent>
       </Card>
     </div>
