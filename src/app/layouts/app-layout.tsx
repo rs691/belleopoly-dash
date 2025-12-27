@@ -50,7 +50,6 @@ const navItems = [
   { href: '/dashboard', icon: LayoutDashboard, label: 'Dashboard' },
   { href: '/organizations', icon: Building, label: 'Organizations' },
   { href: '/businesses', icon: Puzzle, label: 'Businesses' },
-  { href: '/tiles', icon: Puzzle, label: 'Tile Manager' },
   { href: '/analysis', icon: BrainCircuit, label: 'Analysis' },
 ];
 
