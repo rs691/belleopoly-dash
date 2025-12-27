@@ -9,6 +9,7 @@ import {
   Puzzle,
   BrainCircuit,
   Loader2,
+  Database,
 } from 'lucide-react';
 
 import { useAuth } from '@/hooks/use-auth';
@@ -49,8 +50,10 @@ function AuthGuard({ children }: { children: React.ReactNode }) {
 const navItems = [
   { href: '/dashboard', icon: LayoutDashboard, label: 'Dashboard' },
   { href: '/organizations', icon: Building, label: 'Organizations' },
+  { href: '/businesses', icon: Puzzle, label: 'Businesses' },
   { href: '/tiles', icon: Puzzle, label: 'Tile Manager' },
   { href: '/analysis', icon: BrainCircuit, label: 'Analysis' },
+  { href: '/database', icon: Database, label: 'Database' },
 ];
 
 export default function AppLayout({ children }: { children: React.ReactNode }) {
