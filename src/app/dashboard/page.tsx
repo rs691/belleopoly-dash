@@ -86,7 +86,7 @@ export default function DashboardPage() {
   useEffect(() => {
     const interval = setInterval(() => {
       const newScan: Scan = {
-        id: (scans.length + 1).toString(),
+        id: `${Date.now()}-${Math.random()}`, // Create a more unique ID
         property:
           properties[Math.floor(Math.random() * properties.length)],
         player: `Player ${Math.floor(Math.random() * 4) + 1}`,
@@ -97,7 +97,7 @@ export default function DashboardPage() {
     }, 5000); // Add a new scan every 5 seconds
 
     return () => clearInterval(interval);
-  }, [scans]);
+  }, []);
 
   const getStatusBadgeVariant = (
     status: Scan['status']
