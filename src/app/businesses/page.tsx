@@ -69,6 +69,7 @@ import {
 } from 'firebase/firestore';
 import { db } from '@/lib/firebase/config';
 import { useToast } from '@/hooks/use-toast';
+import { GoogleMap, useLoadScript, Marker } from '@react-google-maps/api';
 
 type Business = {
   id: string;
@@ -80,6 +81,8 @@ type Business = {
     street?: string;
     city?: string;
   };
+  lat?: number;
+  lng?: number;
 };
 
 const businessSchema = z.object({
@@ -89,6 +92,7 @@ const businessSchema = z.object({
   street: z.string().optional(),
   city: z.string().optional(),
   qr_code_secret: z.string().min(1, 'QR Code Secret is required'),
+  address: z.string().min(1, 'Address is required'),
 });
 
 export default function BusinessesPage() {
@@ -98,6 +102,9 @@ export default function BusinessesPage() {
   const [isFormOpen, setIsFormOpen] = useState(false);
   const [isDeleteAlertOpen, setIsDeleteAlertOpen] = useState(false);
   const [selectedBusiness, setSelectedBusiness] = useState<Business | null>(null);
+  const { isLoaded, loadError } = useLoadScript({
+    googleMapsApiKey: process.env.NEXT_PUBLIC_GOOGLE_MAPS_API_KEY || '',
+  });
 
   const form = useForm<z.infer<typeof businessSchema>>({
     resolver: zodResolver(businessSchema),
@@ -108,6 +115,7 @@ export default function BusinessesPage() {
       street: '',
       city: '',
       qr_code_secret: '',
+      address: '',
     },
   });
 
@@ -126,6 +134,8 @@ export default function BusinessesPage() {
           points_per_visit: data.points_per_visit || 0,
           qr_code_secret: data.qr_code_secret || '',
           details: data.details || {},
+          lat: data.lat,
+          lng: data.lng,
         };
       });
       setBusinesses(businessesList);
@@ -153,7 +163,8 @@ export default function BusinessesPage() {
       points_per_visit: 10,
       street: '',
       city: '',
-      qr_code_secret: `secret_${Date.now()}`
+      qr_code_secret: `secret_${Date.now()}`,
+      address: '',
     });
     setIsFormOpen(true);
   };
@@ -167,6 +178,7 @@ export default function BusinessesPage() {
       street: business.details?.street || '',
       city: business.details?.city || '',
       qr_code_secret: business.qr_code_secret,
+      address: `${business.details?.street || ''}, ${business.details?.city || ''}`
     });
     setIsFormOpen(true);
   };
@@ -204,8 +216,7 @@ export default function BusinessesPage() {
         category: values.category,
         points_per_visit: values.points_per_visit,
         qr_code_secret: values.qr_code_secret,
-        'details.street': values.street,
-        'details.city': values.city,
+        address: values.address,
     };
 
     try {
@@ -221,10 +232,7 @@ export default function BusinessesPage() {
           // Add
           await addDoc(collection(db, 'businesses'), {
             ...values,
-            'details.street': values.street,
-            'details.city': values.city,
             org_id: 'bellevue-community', // Hardcoded for now
-            location: new GeoPoint(41.15, -95.93), // Placeholder
             total_scans: 0,
           });
            toast({
@@ -259,6 +267,28 @@ export default function BusinessesPage() {
           Add Business
         </Button>
       </header>
+
+      <Card>
+        <CardHeader>
+          <CardTitle>Business Map</CardTitle>
+        </CardHeader>
+        <CardContent>
+          {isLoaded ? (
+            <GoogleMap
+              mapContainerStyle={{ height: '400px', width: '100%' }}
+              center={{ lat: 41.15, lng: -95.93 }}
+              zoom={12}
+            >
+              {businesses.map(biz => (
+                biz.lat && biz.lng && (
+                  <Marker key={biz.id} position={{ lat: biz.lat, lng: biz.lng }} />
+                )
+              ))}
+            </GoogleMap>
+          ) : <div>Loading Map...</div>}
+          {loadError && <div>Error loading map</div>}
+        </CardContent>
+      </Card>
 
       <Card>
         <CardHeader>
@@ -361,34 +391,19 @@ export default function BusinessesPage() {
                   </FormItem>
                 )}
               />
-               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                 <FormField
-                    control={form.control}
-                    name="street"
-                    render={({ field }) => (
-                      <FormItem>
-                        <FormLabel>Street Address</FormLabel>
-                        <FormControl>
-                          <Input placeholder="e.g., 106 W Main St" {...field} />
-                        </FormControl>
-                        <FormMessage />
-                      </FormItem>
-                    )}
-                  />
-                  <FormField
-                    control={form.control}
-                    name="city"
-                    render={({ field }) => (
-                      <FormItem>
-                        <FormLabel>City</FormLabel>
-                        <FormControl>
-                          <Input placeholder="e.g., Bellevue" {...field} />
-                        </FormControl>
-                        <FormMessage />
-                      </FormItem>
-                    )}
-                  />
-               </div>
+              <FormField
+                control={form.control}
+                name="address"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>Address</FormLabel>
+                    <FormControl>
+                      <Input placeholder="e.g., 106 W Main St, Bellevue, NE" {...field} />
+                    </FormControl>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <FormField
                     control={form.control}
