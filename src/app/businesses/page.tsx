@@ -224,22 +224,19 @@ export default function BusinessesPage() {
   };
 
   const onSubmit = async (values: z.infer<typeof businessSchema>) => {
-    const dataToSave = {
-        ...values,
-        // When updating, we explicitly set lat/lng to null if address changes
-        // to trigger the geocoding Cloud Function.
-        ...(selectedBusiness && selectedBusiness.address !== values.address ? { lat: null, lng: null } : {})
-    };
-
-
     try {
         if (selectedBusiness) {
           // Update
+          const dataToUpdate: any = { ...values };
+          if (selectedBusiness.address !== values.address) {
+            dataToUpdate.lat = null;
+            dataToUpdate.lng = null;
+          }
           const businessDoc = doc(db, 'businesses', selectedBusiness.id);
-          await updateDoc(businessDoc, dataToSave);
+          await updateDoc(businessDoc, dataToUpdate);
            toast({
             title: 'Update Successful',
-            description: `Data for ${values.name} has been updated. Geocoding may take a moment.`,
+            description: `Data for ${values.name} has been updated. Geocoding may take a moment if address was changed.`,
           });
         } else {
           // Add
@@ -247,6 +244,8 @@ export default function BusinessesPage() {
             ...values,
             org_id: 'bellevue-community', // Hardcoded for now
             total_scans: 0,
+            lat: null, // Ensure lat/lng are null to trigger geocoding
+            lng: null,
           });
            toast({
             title: 'Business Added',
