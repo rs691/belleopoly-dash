@@ -128,16 +128,20 @@ export default function BusinessesPage() {
       (snapshot) => {
         const businessesList = snapshot.docs.map((doc) => {
           const data = doc.data();
-          return {
+          const business: Business = {
             id: doc.id,
-            name: data.name,
+            name: data.name || 'Unnamed Business',
             category: data.category || 'N/A',
             points_per_visit: data.points_per_visit || 0,
             qr_code_secret: data.qr_code_secret || '',
             address: data.address || '',
-            lat: data.lat,
-            lng: data.lng,
           };
+          // Only add lat/lng if they are valid numbers
+          if (typeof data.lat === 'number' && typeof data.lng === 'number') {
+            business.lat = data.lat;
+            business.lng = data.lng;
+          }
+          return business;
         });
         setBusinesses(businessesList);
         setLoading(false);
@@ -208,7 +212,6 @@ export default function BusinessesPage() {
                 title: 'Business Deleted',
                 description: `"${selectedBusiness.name}" has been permanently deleted.`
             });
-            // The onSnapshot listener will automatically update the UI
         } catch(error) {
              console.error("Failed to delete business:", error);
             toast({
@@ -227,7 +230,6 @@ export default function BusinessesPage() {
         if (selectedBusiness) {
           // Update
           const dataToUpdate: any = { ...values };
-          // If address changed, clear lat/lng to trigger geocoding function
           if (selectedBusiness.address !== values.address) {
             dataToUpdate.lat = null;
             dataToUpdate.lng = null;
@@ -242,9 +244,9 @@ export default function BusinessesPage() {
           // Add
           await addDoc(collection(db, 'businesses'), {
             ...values,
-            org_id: 'bellevue-community', // Hardcoded for now
+            org_id: 'bellevue-community',
             total_scans: 0,
-            lat: null, // Ensure lat/lng are null to trigger geocoding
+            lat: null,
             lng: null,
           });
            toast({
@@ -252,7 +254,6 @@ export default function BusinessesPage() {
             description: `${values.name} has been added. Geocoding may take a moment.`,
           });
         }
-        // The onSnapshot listener will automatically update the UI
         setIsFormOpen(false);
         setSelectedBusiness(null);
     } catch (error) {
@@ -305,7 +306,7 @@ export default function BusinessesPage() {
                       key={biz.id} 
                       position={{ lat: biz.lat, lng: biz.lng }} 
                       title={biz.name}
-                      animation={selectedMapBusiness?.id === biz.id ? (window.google.maps.Animation.BOUNCE) : undefined}
+                      animation={selectedMapBusiness?.id === biz.id && typeof window !== 'undefined' ? (window.google.maps.Animation.BOUNCE) : undefined}
                       onClick={() => handleRowClick(biz)}
                     />
                   )
@@ -494,7 +495,7 @@ export default function BusinessesPage() {
           <AlertDialogHeader>
             <AlertDialogTitle>Are you sure?</AlertDialogTitle>
             <AlertDialogDescription>
-              This action cannot be undone. This will permanently delete the
+              This will permanently delete the
               business &quot;{selectedBusiness?.name}&quot;.
             </AlertDialogDescription>
           </AlertDialogHeader>
@@ -509,3 +510,5 @@ export default function BusinessesPage() {
     </div>
   );
 }
+
+    
