@@ -12,8 +12,8 @@ exports.geocodeAddress = onDocumentWritten("businesses/{businessId}", async (eve
   const snapshot = event.data.after;
   const businessData = snapshot.data();
 
-  // If the lat/lng already exist, or the address hasn't changed, do nothing.
-  if (businessData.lat && businessData.lng) {
+  // If the lat/lng already exist and are valid numbers, or the address hasn't changed, do nothing.
+  if (typeof businessData.lat === 'number' && typeof businessData.lng === 'number') {
     console.log("Location already exists, skipping geocoding.");
     return null;
   }
