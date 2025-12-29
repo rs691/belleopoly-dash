@@ -70,6 +70,7 @@ import {
 import { db } from '@/lib/firebase/config';
 import { useToast } from '@/hooks/use-toast';
 import { GoogleMap, useLoadScript, Marker } from '@react-google-maps/api';
+import { cn } from '@/lib/utils';
 
 type Business = {
   id: string;
@@ -90,6 +91,8 @@ const businessSchema = z.object({
   address: z.string().min(1, 'Address is required'),
 });
 
+const defaultCenter = { lat: 41.15, lng: -95.93 };
+
 export default function BusinessesPage() {
   const { toast } = useToast();
   const [businesses, setBusinesses] = useState<Business[]>([]);
@@ -97,6 +100,10 @@ export default function BusinessesPage() {
   const [isFormOpen, setIsFormOpen] = useState(false);
   const [isDeleteAlertOpen, setIsDeleteAlertOpen] = useState(false);
   const [selectedBusiness, setSelectedBusiness] = useState<Business | null>(null);
+  const [selectedMapBusiness, setSelectedMapBusiness] = useState<Business | null>(null);
+  const [mapCenter, setMapCenter] = useState(defaultCenter);
+  const [zoom, setZoom] = useState(12);
+
   const { isLoaded, loadError } = useLoadScript({
     googleMapsApiKey: process.env.NEXT_PUBLIC_GOOGLE_MAPS_API_KEY || '',
   });
@@ -178,6 +185,20 @@ export default function BusinessesPage() {
   const handleDelete = (business: Business) => {
     setSelectedBusiness(business);
     setIsDeleteAlertOpen(true);
+  };
+  
+  const handleRowClick = (business: Business) => {
+    if (business.lat && business.lng) {
+      setMapCenter({ lat: business.lat, lng: business.lng });
+      setZoom(16);
+      setSelectedMapBusiness(business);
+    } else {
+      toast({
+        variant: "destructive",
+        title: "Location not available",
+        description: "This business does not have coordinates to display on the map.",
+      });
+    }
   };
 
   const confirmDelete = async () => {
@@ -271,12 +292,23 @@ export default function BusinessesPage() {
             {isLoaded && (
               <GoogleMap
                 mapContainerStyle={{ height: '100%', width: '100%' }}
-                center={{ lat: 41.15, lng: -95.93 }}
-                zoom={12}
+                center={mapCenter}
+                zoom={zoom}
+                onDragEnd={() => setSelectedMapBusiness(null)}
+                options={{
+                  streetViewControl: false,
+                  mapTypeControl: false,
+                }}
               >
                 {businesses.map(biz => (
                   biz.lat && biz.lng && (
-                    <Marker key={biz.id} position={{ lat: biz.lat, lng: biz.lng }} title={biz.name} />
+                    <Marker 
+                      key={biz.id} 
+                      position={{ lat: biz.lat, lng: biz.lng }} 
+                      title={biz.name}
+                      animation={selectedMapBusiness?.id === biz.id ? window.google.maps.Animation.BOUNCE : undefined}
+                      onClick={() => handleRowClick(biz)}
+                    />
                   )
                 ))}
               </GoogleMap>
@@ -309,7 +341,11 @@ export default function BusinessesPage() {
               </TableHeader>
               <TableBody>
                 {businesses.map((biz) => (
-                  <TableRow key={biz.id}>
+                  <TableRow 
+                    key={biz.id}
+                    onClick={() => handleRowClick(biz)}
+                    className={cn('cursor-pointer', { 'bg-muted/50': selectedMapBusiness?.id === biz.id })}
+                  >
                     <TableCell className="font-medium">{biz.name}</TableCell>
                     <TableCell>{biz.category}</TableCell>
                     <TableCell>{biz.points_per_visit}</TableCell>
@@ -317,7 +353,12 @@ export default function BusinessesPage() {
                     <TableCell className="text-right">
                       <DropdownMenu>
                         <DropdownMenuTrigger asChild>
-                          <Button aria-haspopup="true" size="icon" variant="ghost">
+                          <Button 
+                            aria-haspopup="true" 
+                            size="icon" 
+                            variant="ghost"
+                            onClick={(e) => e.stopPropagation()} // Prevent row click
+                          >
                             <MoreHorizontal className="h-4 w-4" />
                             <span className="sr-only">Toggle menu</span>
                           </Button>
