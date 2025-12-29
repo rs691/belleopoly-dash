@@ -65,7 +65,6 @@ import {
   doc,
   query,
   orderBy,
-  GeoPoint,
 } from 'firebase/firestore';
 import { db } from '@/lib/firebase/config';
 import { useToast } from '@/hooks/use-toast';
@@ -77,10 +76,7 @@ type Business = {
   category: string;
   points_per_visit: number;
   qr_code_secret: string;
-  details: {
-    street?: string;
-    city?: string;
-  };
+  address: string;
   lat?: number;
   lng?: number;
 };
@@ -89,8 +85,6 @@ const businessSchema = z.object({
   name: z.string().min(1, 'Business name is required'),
   category: z.string().min(1, 'Category is required'),
   points_per_visit: z.coerce.number().min(0, 'Points must be a positive number'),
-  street: z.string().optional(),
-  city: z.string().optional(),
   qr_code_secret: z.string().min(1, 'QR Code Secret is required'),
   address: z.string().min(1, 'Address is required'),
 });
@@ -112,8 +106,6 @@ export default function BusinessesPage() {
       name: '',
       category: '',
       points_per_visit: 10,
-      street: '',
-      city: '',
       qr_code_secret: '',
       address: '',
     },
@@ -133,7 +125,7 @@ export default function BusinessesPage() {
           category: data.category || 'N/A',
           points_per_visit: data.points_per_visit || 0,
           qr_code_secret: data.qr_code_secret || '',
-          details: data.details || {},
+          address: data.address || '',
           lat: data.lat,
           lng: data.lng,
         };
@@ -161,8 +153,6 @@ export default function BusinessesPage() {
       name: '',
       category: '',
       points_per_visit: 10,
-      street: '',
-      city: '',
       qr_code_secret: `secret_${Date.now()}`,
       address: '',
     });
@@ -175,10 +165,8 @@ export default function BusinessesPage() {
       name: business.name,
       category: business.category,
       points_per_visit: business.points_per_visit,
-      street: business.details?.street || '',
-      city: business.details?.city || '',
       qr_code_secret: business.qr_code_secret,
-      address: `${business.details?.street || ''}, ${business.details?.city || ''}`
+      address: business.address
     });
     setIsFormOpen(true);
   };
@@ -281,7 +269,7 @@ export default function BusinessesPage() {
             >
               {businesses.map(biz => (
                 biz.lat && biz.lng && (
-                  <Marker key={biz.id} position={{ lat: biz.lat, lng: biz.lng }} />
+                  <Marker key={biz.id} position={{ lat: biz.lat, lng: biz.lng }} title={biz.name} />
                 )
               ))}
             </GoogleMap>
@@ -318,7 +306,7 @@ export default function BusinessesPage() {
                     <TableCell className="font-medium">{biz.name}</TableCell>
                     <TableCell>{biz.category}</TableCell>
                     <TableCell>{biz.points_per_visit}</TableCell>
-                    <TableCell>{biz.details?.street}, {biz.details?.city}</TableCell>
+                    <TableCell>{biz.address}</TableCell>
                     <TableCell className="text-right">
                       <DropdownMenu>
                         <DropdownMenuTrigger asChild>
@@ -474,3 +462,5 @@ export default function BusinessesPage() {
     </div>
   );
 }
+
+    
