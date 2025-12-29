@@ -58,7 +58,6 @@ import { zodResolver } from '@hookform/resolvers/zod';
 import * as z from 'zod';
 import {
   collection,
-  getDocs,
   addDoc,
   updateDoc,
   deleteDoc,
@@ -228,6 +227,7 @@ export default function BusinessesPage() {
         if (selectedBusiness) {
           // Update
           const dataToUpdate: any = { ...values };
+          // If address changed, clear lat/lng to trigger geocoding function
           if (selectedBusiness.address !== values.address) {
             dataToUpdate.lat = null;
             dataToUpdate.lng = null;
@@ -305,7 +305,7 @@ export default function BusinessesPage() {
                       key={biz.id} 
                       position={{ lat: biz.lat, lng: biz.lng }} 
                       title={biz.name}
-                      animation={selectedMapBusiness?.id === biz.id ? window.google.maps.Animation.BOUNCE : undefined}
+                      animation={selectedMapBusiness?.id === biz.id ? (window.google.maps.Animation.BOUNCE) : undefined}
                       onClick={() => handleRowClick(biz)}
                     />
                   )
