@@ -65,6 +65,7 @@ import {
   doc,
   query,
   orderBy,
+  onSnapshot,
 } from 'firebase/firestore';
 import { db } from '@/lib/firebase/config';
 import { useToast } from '@/hooks/use-toast';
@@ -111,41 +112,44 @@ export default function BusinessesPage() {
     },
   });
 
-  const fetchBusinesses = async () => {
+  useEffect(() => {
     setLoading(true);
-    try {
-      const businessesCollection = collection(db, 'businesses');
-      const q = query(businessesCollection, orderBy('name'));
-      const businessesSnapshot = await getDocs(q);
-      const businessesList = businessesSnapshot.docs.map((doc) => {
-        const data = doc.data();
-        return {
-          id: doc.id,
-          name: data.name,
-          category: data.category || 'N/A',
-          points_per_visit: data.points_per_visit || 0,
-          qr_code_secret: data.qr_code_secret || '',
-          address: data.address || '',
-          lat: data.lat,
-          lng: data.lng,
-        };
-      });
-      setBusinesses(businessesList);
-    } catch (error) {
+    const businessesCollection = collection(db, 'businesses');
+    const q = query(businessesCollection, orderBy('name'));
+
+    const unsubscribe = onSnapshot(
+      q,
+      (snapshot) => {
+        const businessesList = snapshot.docs.map((doc) => {
+          const data = doc.data();
+          return {
+            id: doc.id,
+            name: data.name,
+            category: data.category || 'N/A',
+            points_per_visit: data.points_per_visit || 0,
+            qr_code_secret: data.qr_code_secret || '',
+            address: data.address || '',
+            lat: data.lat,
+            lng: data.lng,
+          };
+        });
+        setBusinesses(businessesList);
+        setLoading(false);
+      },
+      (error) => {
         console.error("Failed to fetch businesses:", error);
         toast({
             variant: "destructive",
             title: "Failed to fetch businesses",
             description: "Could not retrieve business data from Firestore."
-        })
-    } finally {
+        });
         setLoading(false);
-    }
-  };
+      }
+    );
 
-  useEffect(() => {
-    fetchBusinesses();
-  }, []);
+    return () => unsubscribe();
+  }, [toast]);
+
 
   const handleAdd = () => {
     setSelectedBusiness(null);
@@ -184,7 +188,7 @@ export default function BusinessesPage() {
                 title: 'Business Deleted',
                 description: `"${selectedBusiness.name}" has been permanently deleted.`
             });
-            await fetchBusinesses();
+            // The onSnapshot listener will automatically update the UI
         } catch(error) {
              console.error("Failed to delete business:", error);
             toast({
@@ -200,12 +204,12 @@ export default function BusinessesPage() {
 
   const onSubmit = async (values: z.infer<typeof businessSchema>) => {
     const dataToSave = {
-        name: values.name,
-        category: values.category,
-        points_per_visit: values.points_per_visit,
-        qr_code_secret: values.qr_code_secret,
-        address: values.address,
+        ...values,
+        // When updating, we explicitly set lat/lng to null if address changes
+        // to trigger the geocoding Cloud Function.
+        ...(selectedBusiness && selectedBusiness.address !== values.address ? { lat: null, lng: null } : {})
     };
+
 
     try {
         if (selectedBusiness) {
@@ -214,7 +218,7 @@ export default function BusinessesPage() {
           await updateDoc(businessDoc, dataToSave);
            toast({
             title: 'Update Successful',
-            description: `Data for ${values.name} has been updated.`,
+            description: `Data for ${values.name} has been updated. Geocoding may take a moment.`,
           });
         } else {
           // Add
@@ -225,10 +229,10 @@ export default function BusinessesPage() {
           });
            toast({
             title: 'Business Added',
-            description: `${values.name} has been added to the list.`,
+            description: `${values.name} has been added. Geocoding may take a moment.`,
           });
         }
-        await fetchBusinesses();
+        // The onSnapshot listener will automatically update the UI
         setIsFormOpen(false);
         setSelectedBusiness(null);
     } catch (error) {
@@ -261,20 +265,23 @@ export default function BusinessesPage() {
           <CardTitle>Business Map</CardTitle>
         </CardHeader>
         <CardContent>
-          {isLoaded ? (
-            <GoogleMap
-              mapContainerStyle={{ height: '400px', width: '100%' }}
-              center={{ lat: 41.15, lng: -95.93 }}
-              zoom={12}
-            >
-              {businesses.map(biz => (
-                biz.lat && biz.lng && (
-                  <Marker key={biz.id} position={{ lat: biz.lat, lng: biz.lng }} title={biz.name} />
-                )
-              ))}
-            </GoogleMap>
-          ) : <div>Loading Map...</div>}
-          {loadError && <div>Error loading map</div>}
+          <div className="h-[400px] w-full rounded-lg bg-muted flex items-center justify-center">
+            {loadError && <div className='text-destructive'>Error loading map</div>}
+            {!isLoaded && !loadError && <div className='flex items-center gap-2'><Loader2 className="h-5 w-5 animate-spin" /> <span>Loading Map...</span></div>}
+            {isLoaded && (
+              <GoogleMap
+                mapContainerStyle={{ height: '100%', width: '100%' }}
+                center={{ lat: 41.15, lng: -95.93 }}
+                zoom={12}
+              >
+                {businesses.map(biz => (
+                  biz.lat && biz.lng && (
+                    <Marker key={biz.id} position={{ lat: biz.lat, lng: biz.lng }} title={biz.name} />
+                  )
+                ))}
+              </GoogleMap>
+            )}
+          </div>
         </CardContent>
       </Card>
 
@@ -462,5 +469,3 @@ export default function BusinessesPage() {
     </div>
   );
 }
-
-    
