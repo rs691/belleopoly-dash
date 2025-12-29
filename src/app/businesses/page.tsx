@@ -128,20 +128,16 @@ export default function BusinessesPage() {
       (snapshot) => {
         const businessesList = snapshot.docs.map((doc) => {
           const data = doc.data();
-          const business: Business = {
+          return {
             id: doc.id,
             name: data.name || 'Unnamed Business',
             category: data.category || 'N/A',
             points_per_visit: data.points_per_visit || 0,
             qr_code_secret: data.qr_code_secret || '',
             address: data.address || '',
-          };
-          // Only add lat/lng if they are valid numbers
-          if (typeof data.lat === 'number' && typeof data.lng === 'number') {
-            business.lat = data.lat;
-            business.lng = data.lng;
-          }
-          return business;
+            lat: data.lat,
+            lng: data.lng,
+          } as Business;
         });
         setBusinesses(businessesList);
         setLoading(false);
@@ -510,5 +506,3 @@ export default function BusinessesPage() {
     </div>
   );
 }
-
-    
