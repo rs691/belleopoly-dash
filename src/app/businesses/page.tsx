@@ -226,6 +226,7 @@ export default function BusinessesPage() {
         if (selectedBusiness) {
           // Update
           const dataToUpdate: any = { ...values };
+          // If the address changed, clear lat/lng to trigger geocoding
           if (selectedBusiness.address !== values.address) {
             dataToUpdate.lat = null;
             dataToUpdate.lng = null;
@@ -242,8 +243,8 @@ export default function BusinessesPage() {
             ...values,
             org_id: 'bellevue-community',
             total_scans: 0,
-            lat: null,
-            lng: null,
+            lat: null, // Explicitly set to null to trigger geocoding
+            lng: null, // Explicitly set to null to trigger geocoding
           });
            toast({
             title: 'Business Added',
