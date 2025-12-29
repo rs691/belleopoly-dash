@@ -58,18 +58,18 @@ import { zodResolver } from '@hookform/resolvers/zod';
 import * as z from 'zod';
 import {
   collection,
-  getDocs,
   addDoc,
   updateDoc,
   deleteDoc,
   doc,
   query,
   orderBy,
-  GeoPoint,
+  onSnapshot,
 } from 'firebase/firestore';
 import { db } from '@/lib/firebase/config';
 import { useToast } from '@/hooks/use-toast';
 import { GoogleMap, useLoadScript, Marker } from '@react-google-maps/api';
+import { cn } from '@/lib/utils';
 
 type Business = {
   id: string;
@@ -77,10 +77,7 @@ type Business = {
   category: string;
   points_per_visit: number;
   qr_code_secret: string;
-  details: {
-    street?: string;
-    city?: string;
-  };
+  address: string;
   lat?: number;
   lng?: number;
 };
@@ -89,11 +86,11 @@ const businessSchema = z.object({
   name: z.string().min(1, 'Business name is required'),
   category: z.string().min(1, 'Category is required'),
   points_per_visit: z.coerce.number().min(0, 'Points must be a positive number'),
-  street: z.string().optional(),
-  city: z.string().optional(),
   qr_code_secret: z.string().min(1, 'QR Code Secret is required'),
   address: z.string().min(1, 'Address is required'),
 });
+
+const defaultCenter = { lat: 41.15, lng: -95.93 };
 
 export default function BusinessesPage() {
   const { toast } = useToast();
@@ -102,6 +99,10 @@ export default function BusinessesPage() {
   const [isFormOpen, setIsFormOpen] = useState(false);
   const [isDeleteAlertOpen, setIsDeleteAlertOpen] = useState(false);
   const [selectedBusiness, setSelectedBusiness] = useState<Business | null>(null);
+  const [selectedMapBusiness, setSelectedMapBusiness] = useState<Business | null>(null);
+  const [mapCenter, setMapCenter] = useState(defaultCenter);
+  const [zoom, setZoom] = useState(12);
+
   const { isLoaded, loadError } = useLoadScript({
     googleMapsApiKey: process.env.NEXT_PUBLIC_GOOGLE_MAPS_API_KEY || '',
   });
@@ -112,48 +113,49 @@ export default function BusinessesPage() {
       name: '',
       category: '',
       points_per_visit: 10,
-      street: '',
-      city: '',
       qr_code_secret: '',
       address: '',
     },
   });
 
-  const fetchBusinesses = async () => {
+  useEffect(() => {
     setLoading(true);
-    try {
-      const businessesCollection = collection(db, 'businesses');
-      const q = query(businessesCollection, orderBy('name'));
-      const businessesSnapshot = await getDocs(q);
-      const businessesList = businessesSnapshot.docs.map((doc) => {
-        const data = doc.data();
-        return {
-          id: doc.id,
-          name: data.name,
-          category: data.category || 'N/A',
-          points_per_visit: data.points_per_visit || 0,
-          qr_code_secret: data.qr_code_secret || '',
-          details: data.details || {},
-          lat: data.lat,
-          lng: data.lng,
-        };
-      });
-      setBusinesses(businessesList);
-    } catch (error) {
+    const businessesCollection = collection(db, 'businesses');
+    const q = query(businessesCollection, orderBy('name'));
+
+    const unsubscribe = onSnapshot(
+      q,
+      (snapshot) => {
+        const businessesList = snapshot.docs.map((doc) => {
+          const data = doc.data();
+          return {
+            id: doc.id,
+            name: data.name || 'Unnamed Business',
+            category: data.category || 'N/A',
+            points_per_visit: data.points_per_visit || 0,
+            qr_code_secret: data.qr_code_secret || '',
+            address: data.address || '',
+            lat: data.lat,
+            lng: data.lng,
+          } as Business;
+        });
+        setBusinesses(businessesList);
+        setLoading(false);
+      },
+      (error) => {
         console.error("Failed to fetch businesses:", error);
         toast({
             variant: "destructive",
             title: "Failed to fetch businesses",
             description: "Could not retrieve business data from Firestore."
-        })
-    } finally {
+        });
         setLoading(false);
-    }
-  };
+      }
+    );
 
-  useEffect(() => {
-    fetchBusinesses();
-  }, []);
+    return () => unsubscribe();
+  }, [toast]);
+
 
   const handleAdd = () => {
     setSelectedBusiness(null);
@@ -161,8 +163,6 @@ export default function BusinessesPage() {
       name: '',
       category: '',
       points_per_visit: 10,
-      street: '',
-      city: '',
       qr_code_secret: `secret_${Date.now()}`,
       address: '',
     });
@@ -175,10 +175,8 @@ export default function BusinessesPage() {
       name: business.name,
       category: business.category,
       points_per_visit: business.points_per_visit,
-      street: business.details?.street || '',
-      city: business.details?.city || '',
       qr_code_secret: business.qr_code_secret,
-      address: `${business.details?.street || ''}, ${business.details?.city || ''}`
+      address: business.address
     });
     setIsFormOpen(true);
   };
@@ -186,6 +184,20 @@ export default function BusinessesPage() {
   const handleDelete = (business: Business) => {
     setSelectedBusiness(business);
     setIsDeleteAlertOpen(true);
+  };
+  
+  const handleRowClick = (business: Business) => {
+    if (business.lat && business.lng) {
+      setMapCenter({ lat: business.lat, lng: business.lng });
+      setZoom(16);
+      setSelectedMapBusiness(business);
+    } else {
+      toast({
+        variant: "destructive",
+        title: "Location not available",
+        description: "This business does not have coordinates to display on the map.",
+      });
+    }
   };
 
   const confirmDelete = async () => {
@@ -196,7 +208,6 @@ export default function BusinessesPage() {
                 title: 'Business Deleted',
                 description: `"${selectedBusiness.name}" has been permanently deleted.`
             });
-            await fetchBusinesses();
         } catch(error) {
              console.error("Failed to delete business:", error);
             toast({
@@ -211,36 +222,35 @@ export default function BusinessesPage() {
   };
 
   const onSubmit = async (values: z.infer<typeof businessSchema>) => {
-    const dataToSave = {
-        name: values.name,
-        category: values.category,
-        points_per_visit: values.points_per_visit,
-        qr_code_secret: values.qr_code_secret,
-        address: values.address,
-    };
-
     try {
         if (selectedBusiness) {
           // Update
+          const dataToUpdate: any = { ...values };
+          // If the address changed, clear lat/lng to trigger geocoding
+          if (selectedBusiness.address !== values.address) {
+            dataToUpdate.lat = null;
+            dataToUpdate.lng = null;
+          }
           const businessDoc = doc(db, 'businesses', selectedBusiness.id);
-          await updateDoc(businessDoc, dataToSave);
+          await updateDoc(businessDoc, dataToUpdate);
            toast({
             title: 'Update Successful',
-            description: `Data for ${values.name} has been updated.`,
+            description: `Data for ${values.name} has been updated. Geocoding may take a moment if address was changed.`,
           });
         } else {
           // Add
           await addDoc(collection(db, 'businesses'), {
             ...values,
-            org_id: 'bellevue-community', // Hardcoded for now
+            org_id: 'bellevue-community',
             total_scans: 0,
+            lat: null, // Explicitly set to null to trigger geocoding
+            lng: null, // Explicitly set to null to trigger geocoding
           });
            toast({
             title: 'Business Added',
-            description: `${values.name} has been added to the list.`,
+            description: `${values.name} has been added. Geocoding may take a moment.`,
           });
         }
-        await fetchBusinesses();
         setIsFormOpen(false);
         setSelectedBusiness(null);
     } catch (error) {
@@ -273,20 +283,34 @@ export default function BusinessesPage() {
           <CardTitle>Business Map</CardTitle>
         </CardHeader>
         <CardContent>
-          {isLoaded ? (
-            <GoogleMap
-              mapContainerStyle={{ height: '400px', width: '100%' }}
-              center={{ lat: 41.15, lng: -95.93 }}
-              zoom={12}
-            >
-              {businesses.map(biz => (
-                biz.lat && biz.lng && (
-                  <Marker key={biz.id} position={{ lat: biz.lat, lng: biz.lng }} />
-                )
-              ))}
-            </GoogleMap>
-          ) : <div>Loading Map...</div>}
-          {loadError && <div>Error loading map</div>}
+          <div className="h-[400px] w-full rounded-lg bg-muted flex items-center justify-center">
+            {loadError && <div className='text-destructive'>Error loading map</div>}
+            {!isLoaded && !loadError && <div className='flex items-center gap-2'><Loader2 className="h-5 w-5 animate-spin" /> <span>Loading Map...</span></div>}
+            {isLoaded && (
+              <GoogleMap
+                mapContainerStyle={{ height: '100%', width: '100%' }}
+                center={mapCenter}
+                zoom={zoom}
+                onDragEnd={() => setSelectedMapBusiness(null)}
+                options={{
+                  streetViewControl: false,
+                  mapTypeControl: false,
+                }}
+              >
+                {businesses.map(biz => (
+                  biz.lat && biz.lng && (
+                    <Marker 
+                      key={biz.id} 
+                      position={{ lat: biz.lat, lng: biz.lng }} 
+                      title={biz.name}
+                      animation={selectedMapBusiness?.id === biz.id && typeof window !== 'undefined' ? (window.google.maps.Animation.BOUNCE) : undefined}
+                      onClick={() => handleRowClick(biz)}
+                    />
+                  )
+                ))}
+              </GoogleMap>
+            )}
+          </div>
         </CardContent>
       </Card>
 
@@ -314,15 +338,24 @@ export default function BusinessesPage() {
               </TableHeader>
               <TableBody>
                 {businesses.map((biz) => (
-                  <TableRow key={biz.id}>
+                  <TableRow 
+                    key={biz.id}
+                    onClick={() => handleRowClick(biz)}
+                    className={cn('cursor-pointer', { 'bg-muted/50': selectedMapBusiness?.id === biz.id })}
+                  >
                     <TableCell className="font-medium">{biz.name}</TableCell>
                     <TableCell>{biz.category}</TableCell>
                     <TableCell>{biz.points_per_visit}</TableCell>
-                    <TableCell>{biz.details?.street}, {biz.details?.city}</TableCell>
+                    <TableCell>{biz.address}</TableCell>
                     <TableCell className="text-right">
                       <DropdownMenu>
                         <DropdownMenuTrigger asChild>
-                          <Button aria-haspopup="true" size="icon" variant="ghost">
+                          <Button 
+                            aria-haspopup="true" 
+                            size="icon" 
+                            variant="ghost"
+                            onClick={(e) => e.stopPropagation()} // Prevent row click
+                          >
                             <MoreHorizontal className="h-4 w-4" />
                             <span className="sr-only">Toggle menu</span>
                           </Button>
@@ -459,7 +492,7 @@ export default function BusinessesPage() {
           <AlertDialogHeader>
             <AlertDialogTitle>Are you sure?</AlertDialogTitle>
             <AlertDialogDescription>
-              This action cannot be undone. This will permanently delete the
+              This will permanently delete the
               business &quot;{selectedBusiness?.name}&quot;.
             </AlertDialogDescription>
           </AlertDialogHeader>

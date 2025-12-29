@@ -18,120 +18,107 @@ import { Badge } from '@/components/ui/badge';
 import { Eye, Users, ScanLine } from 'lucide-react';
 import React, { useState, useEffect } from 'react';
 import { formatDistanceToNow } from 'date-fns';
+import { db } from '@/lib/firebase/config';
+import {
+  collection,
+  query,
+  orderBy,
+  limit,
+  onSnapshot,
+  doc,
+  getDoc,
+  Timestamp,
+} from 'firebase/firestore';
 
 type Scan = {
   id: string;
-  property: string;
-  player: string;
+  businessName: string;
+  userName: string;
   timestamp: Date;
-  status: 'Completed' | 'Pending' | 'Failed';
 };
 
-const initialScans: Scan[] = [
-  {
-    id: '1',
-    property: 'Boardwalk',
-    player: 'Player 1',
-    timestamp: new Date(Date.now() - 1000 * 60 * 2),
-    status: 'Completed',
-  },
-  {
-    id: '2',
-    property: 'Park Place',
-    player: 'Player 2',
-    timestamp: new Date(Date.now() - 1000 * 60 * 5),
-    status: 'Completed',
-  },
-  {
-    id: '3',
-    property: 'St. Charles Place',
-    player: 'Player 3',
-    timestamp: new Date(Date.now() - 1000 * 60 * 10),
-    status: 'Failed',
-  },
-];
-
-const properties = [
-  'Mediterranean Avenue',
-  'Baltic Avenue',
-  'Reading Railroad',
-  'Oriental Avenue',
-  'Vermont Avenue',
-  'Connecticut Avenue',
-  'Jail',
-  'Virginia Avenue',
-  'Pennsylvania Railroad',
-  'St. James Place',
-  'Tennessee Avenue',
-  'New York Avenue',
-  'Free Parking',
-  'Kentucky Avenue',
-  'Indiana Avenue',
-  'B. & O. Railroad',
-  'Atlantic Avenue',
-  'Ventnor Avenue',
-  'Water Works',
-  'Marvin Gardens',
-  'Go to Jail',
-  'Pacific Avenue',
-  'North Carolina Avenue',
-  'Short Line',
-  'Pennsylvania Avenue',
-  'Go',
-];
-
 export default function DashboardPage() {
-  const [scans, setScans] = useState<Scan[]>(initialScans);
+  const [scans, setScans] = useState<Scan[]>([]);
+  const [totalScans, setTotalScans] = useState(0);
+  const [activePlayers, setActivePlayers] = useState(0);
 
   useEffect(() => {
-    const interval = setInterval(() => {
-      const newScan: Scan = {
-        id: `${Date.now()}-${Math.random()}`, // Create a more unique ID
-        property:
-          properties[Math.floor(Math.random() * properties.length)],
-        player: `Player ${Math.floor(Math.random() * 4) + 1}`,
-        timestamp: new Date(),
-        status: 'Completed',
-      };
-      setScans((prevScans) => [newScan, ...prevScans].slice(0, 10));
-    }, 5000); // Add a new scan every 5 seconds
+    // Listen for real-time updates on the scans collection
+    const q = query(
+      collection(db, 'scans'),
+      orderBy('timestamp', 'desc'),
+      limit(10)
+    );
 
-    return () => clearInterval(interval);
-  }, []);
+    const unsubscribe = onSnapshot(q, async (querySnapshot) => {
+      const newScans = await Promise.all(
+        querySnapshot.docs.map(async (scanDoc) => {
+          const scanData = scanDoc.data();
 
-  const getStatusBadgeVariant = (
-    status: Scan['status']
-  ): 'default' | 'secondary' | 'destructive' => {
-    switch (status) {
-      case 'Completed':
-        return 'default';
-      case 'Pending':
-        return 'secondary';
-      case 'Failed':
-        return 'destructive';
-      default:
-        return 'default';
-    }
-  };
+          // Fetch business name
+          let businessName = 'Unknown Business';
+          if (scanData.business_id) {
+            const businessRef = doc(db, 'businesses', scanData.business_id);
+            const businessSnap = await getDoc(businessRef);
+            if (businessSnap.exists()) {
+              businessName = businessSnap.data().name;
+            }
+          }
+
+          // Fetch user name
+          let userName = 'Unknown User';
+          if (scanData.user_id) {
+            // Assuming you have a 'users' collection
+            const userRef = doc(db, 'users', scanData.user_id);
+            const userSnap = await getDoc(userRef);
+            if (userSnap.exists()) {
+              // Assuming the user document has a 'name' or 'displayName' field
+              userName = userSnap.data().name || userSnap.data().displayName || 'Anonymous';
+            }
+          }
+
+          const timestamp = scanData.timestamp as Timestamp;
+
+          return {
+            id: scanDoc.id,
+            businessName,
+            userName,
+            timestamp: timestamp.toDate(),
+          };
+        })
+      );
+
+      setScans(newScans);
+
+      // Simple logic to update stats - you might want more sophisticated logic
+      if(querySnapshot.docs.length > totalScans) {
+        setTotalScans(querySnapshot.docs.length);
+      }
+      const uniquePlayers = new Set(newScans.map(s => s.userName));
+      setActivePlayers(uniquePlayers.size);
+
+    });
+
+    // Clean up the listener on unmount
+    return () => unsubscribe();
+  }, [totalScans]);
 
   return (
     <div className="space-y-8">
       <header>
         <h1 className="text-3xl font-bold tracking-tight">Dashboard</h1>
-        <p className="text-muted-foreground">
-          Welcome to the Monopoly Admin Center.
-        </p>
+        <p className="text-muted-foreground">Real-time business scan data.</p>
       </header>
 
       <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
         <Card className="glass-card">
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">Total Scans</CardTitle>
+            <CardTitle className="text-sm font-medium">Total Scans Today</CardTitle>
             <ScanLine className="h-4 w-4 text-muted-foreground" />
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold">1,234</div>
-            <p className="text-xs text-muted-foreground">+20.1% from last month</p>
+            <div className="text-2xl font-bold">{totalScans}</div>
+            <p className="text-xs text-muted-foreground">Total scans since midnight</p>
           </CardContent>
         </Card>
         <Card className="glass-card">
@@ -140,18 +127,20 @@ export default function DashboardPage() {
             <Users className="h-4 w-4 text-muted-foreground" />
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold">+4</div>
-            <p className="text-xs text-muted-foreground">Current game session</p>
+            <div className="text-2xl font-bold">+{activePlayers}</div>
+            <p className="text-xs text-muted-foreground">In the last 10 scans</p>
           </CardContent>
         </Card>
         <Card className="glass-card">
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">Live Feed</CardTitle>
+            <CardTitle className="text-sm font-medium">Feed Status</CardTitle>
             <Eye className="h-4 w-4 text-muted-foreground" />
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold">Real-time</div>
-            <p className="text-xs text-muted-foreground">Monitoring new scans</p>
+            <div className="text-2xl font-bold">Live</div>
+            <p className="text-xs text-muted-foreground">
+              Monitoring new scans in real-time
+            </p>
           </CardContent>
         </Card>
       </div>
@@ -164,27 +153,29 @@ export default function DashboardPage() {
           <Table>
             <TableHeader>
               <TableRow>
-                <TableHead>Property</TableHead>
+                <TableHead>Business</TableHead>
                 <TableHead>Player</TableHead>
-                <TableHead>Status</TableHead>
                 <TableHead className="text-right">Timestamp</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
-              {scans.map((scan) => (
-                <TableRow key={scan.id}>
-                  <TableCell className="font-medium">{scan.property}</TableCell>
-                  <TableCell>{scan.player}</TableCell>
-                  <TableCell>
-                    <Badge variant={getStatusBadgeVariant(scan.status)}>
-                      {scan.status}
-                    </Badge>
-                  </TableCell>
-                  <TableCell className="text-right text-muted-foreground">
-                    {formatDistanceToNow(scan.timestamp, { addSuffix: true })}
+              {scans.length > 0 ? (
+                scans.map((scan) => (
+                  <TableRow key={scan.id}>
+                    <TableCell className="font-medium">{scan.businessName}</TableCell>
+                    <TableCell>{scan.userName}</TableCell>
+                    <TableCell className="text-right text-muted-foreground">
+                      {formatDistanceToNow(scan.timestamp, { addSuffix: true })}
+                    </TableCell>
+                  </TableRow>
+                ))
+              ) : (
+                <TableRow>
+                  <TableCell colSpan={3} className="h-24 text-center">
+                    No scans yet. Waiting for data...
                   </TableCell>
                 </TableRow>
-              ))}
+              )}
             </TableBody>
           </Table>
         </CardContent>

@@ -27,6 +27,7 @@
 .env.development.local
 .env.test.local
 .env.production.local
+.env
 
 # Service Account Keys
 # Ignore all json files in the functions directory that end with serviceAccountKey.json
