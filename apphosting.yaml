@@ -10,3 +10,45 @@ runConfig:
       variable: GOOGLE_MAPS_API_KEY
 secrets:
   - name: GOOGLE_MAPS_API_KEY
+
+env:
+-   variable: NEXT_PUBLIC_STORAGE_BUCKET
+    value: belleopoly.firebasestorage.app
+    availability:
+    -   BUILD
+    -   RUNTIME
+-   variable: NEXT_PUBLIC_FIREBASE_API_KEY
+    value: AIzaSyCidjTXn1zzla9E1Qldc2mmymq18UKoG-s
+    availability:
+    -   BUILD
+    -   RUNTIME
+-   variable: NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN
+    value: belleopoly.firebaseapp.com
+    availability:
+    -   BUILD
+    -   RUNTIME
+-   variable: NEXT_PUBLIC_FIREBASE_PROJECT_ID
+    value: belleopoly
+    availability:
+    -   BUILD
+    -   RUNTIME 
+-   variable: NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET
+    value: belleopoly.firebasestorage.app
+    availability:
+    -   BUILD
+    -   RUNTIME 
+-   variable: NEXT_PUBLIC_FIREBASE_MESSAGING_SENDER_ID
+    value: 1234567890
+    availability:
+    -   BUILD
+    -   RUNTIME   
+-   variable: NEXT_PUBLIC_FIREBASE_APP_ID
+    value: 1234567890
+    availability:
+    -   BUILD
+    -   RUNTIME   
+-   variable: NEXT_PUBLIC_FIREBASE_MEASUREMENT_ID
+    value: G-1234567890
+    availability:
+    -   BUILD
+    -   RUNTIME     
